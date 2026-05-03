@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LiveTPoc6" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#0A6CB1</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+    </style>
+</resources>

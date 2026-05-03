@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LiveT-PoC6 Foreground Service Test</string>
+    <string name="notif_title">LiveT-PoC6 正在监听</string>
+    <string name="notif_text">已运行 %1$d 个心跳 (5s 一次, 不录音)</string>
+    <string name="notif_channel_name">LiveT 后台监听</string>
+    <string name="notif_channel_desc">长时间存活测试通知 (PoC-6)</string>
+    <string name="btn_start">启动前台服务</string>
+    <string name="btn_stop">停止</string>
+    <string name="btn_battery">打开电池白名单设置</string>
+</resources>

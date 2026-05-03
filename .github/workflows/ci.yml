@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  privacy-grep:
+    name: Privacy invariant (no audio file persistence)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/privacy-grep-check.sh
+
+  gateway-import:
+    name: Gateway imports + smoke test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from fastapi.testclient import TestClient
+          from main import app
+          c = TestClient(app)
+          assert c.get('/healthz').status_code == 200
+          r = c.post('/v1/sub/token', json={'device_id': 'ci-test'})
+          assert r.status_code == 200, r.text
+          token = r.json()['token']
+          assert c.post('/v1/tts/synth', json={'text': 'x'}).status_code == 401
+          assert c.post('/v1/tts/synth', json={'text': 'x'},
+                        headers={'Authorization': f'Bearer {token}'}).status_code == 501
+          print('gateway smoke test OK')
+          "
+
+  poc4-vec:
+    name: PoC-4 sqlite-vec spike
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: poc/poc-4-memory-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python run.py
+
+  eval-runner:
+    name: Eval runner (parse + dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/eval-runner.py
+
+  ruff-gateway:
+    name: Lint gateway (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check .
+
+  # TODO(W2): add app-typecheck once RN scaffolding lands
+  # TODO(W2): add Android build once we have an emulator/AVD step

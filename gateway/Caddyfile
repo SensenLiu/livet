@@ -1,0 +1,48 @@
+# Caddy reverse proxy + auto-HTTPS for LiveT gateway.
+# Drop in /etc/caddy/Caddyfile (Aliyun lightweight) or run locally with `caddy run`.
+
+# Replace example domains before prod.
+
+api.livet.cn {
+    encode gzip
+
+    # Health endpoint exposed without auth, but rate-limited
+    @health path /healthz
+    handle @health {
+        reverse_proxy localhost:8000
+    }
+
+    # All other API traffic
+    handle {
+        reverse_proxy localhost:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+
+            # Streaming-friendly (ASR / TTS / LLM SSE)
+            flush_interval -1
+            transport http {
+                read_buffer 16KB
+            }
+        }
+
+        # Block obvious abuse
+        @bots header User-Agent "*bot*"
+        respond @bots "" 403
+    }
+
+    log {
+        output file /var/log/caddy/livet-gateway.log {
+            roll_size 50mb
+            roll_keep 7
+        }
+        format console
+        # Privacy: do NOT log request bodies
+    }
+}
+
+# Local dev variant (uncomment when running locally)
+# :8080 {
+#     reverse_proxy localhost:8000
+# }

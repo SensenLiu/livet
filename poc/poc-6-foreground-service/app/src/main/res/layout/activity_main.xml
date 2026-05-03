@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/txt_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textSize="13sp"
+        android:layout_marginBottom="20dp"
+        android:text="(loading...)" />
+
+    <Button
+        android:id="@+id/btn_start"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/btn_start" />
+
+    <Button
+        android:id="@+id/btn_stop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/btn_stop" />
+
+    <Button
+        android:id="@+id/btn_battery"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_battery" />
+
+</LinearLayout>
