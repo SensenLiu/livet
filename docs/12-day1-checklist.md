@@ -12,22 +12,23 @@
 
 ## 1. 申请 API key（约 0.5–1 天）
 
-### 必须（V1 上线前）
+### 必须（V1 上线前）— 简化版（v0.2 合并到 2 个 vendor）
 
-| 服务 | 注册入口 | 用途 | 备注 |
+| 服务 | 注册入口 | 用途 | 状态 |
 |---|---|---|---|
-| **DeepSeek** | https://platform.deepseek.com | 主 LLM | 充值 ¥50 即可 |
-| **火山方舟（豆包）** | https://console.volcengine.com/ark | 兜底 LLM | 注意 endpoint_id 与 api_key 是两个东西 |
-| **讯飞实时语音转写** | https://console.xfyun.cn | 主 ASR | 实时语音转写 SDK，注意是按时长计费 |
-| **阿里云 CosyVoice** | https://help.aliyun.com/zh/dashscope/ | 主 TTS | DashScope 平台，开通"语音合成-CosyVoice" |
-| **Sentry**（可选） | https://sentry.io | 错误监控 | 免费层够阶段 0 用 |
+| **DeepSeek** | https://platform.deepseek.com | 主 LLM | ✅ 已配 (gateway/.env.example) |
+| **火山方舟 / 豆包** | https://console.volcengine.com/ark | 兜底 LLM (Pro-32k) | ✅ 已配 (gateway/.env.example) |
+| **火山引擎 语音技术** | https://console.volcengine.com/speech/ | **ASR + TTS 都用它**(SAMI 流式 + 语音合成大模型) | ⏳ 待申请 AK/SK |
+| **Sentry**（可选） | https://sentry.io | 错误监控 | 可后置 |
 
-### 备用（V1 中后期）
+> **v0.2 决策（2026-05-03）**：原计划讯飞 + 阿里 + 火山三个供应商兜底，
+> 但 MVP 阶段过度设计。已合并为豆包/火山一家：1 个控制台 / 1 套 AK/SK /
+> 1 张账单 / 1 套 SDK。第二供应商（讯飞）仅当 V0.5+ 实测豆包成功率 < 95%
+> 才加。
 
-| 服务 | 注册入口 |
-|---|---|
-| 阿里云智能语音交互 | https://nls-portal.console.aliyun.com |
-| 火山引擎 ASR | https://www.volcengine.com/product/voice-tech |
+### 备用（V0.5+ 才考虑，本阶段不申请）
+
+- 讯飞实时语音转写（如果豆包 ASR 在生产中暴露问题）
 
 ### 申请到 key 后
 
@@ -36,22 +37,19 @@
 ```bash
 cd gateway
 cp .env.example .env
-$EDITOR .env  # 填 DEEPSEEK_API_KEY 等
+$EDITOR .env  # 填 VOLC_AK_ID / VOLC_SK / VOLC_ASR_APP_ID / VOLC_TTS_APP_ID
 ```
 
 ### Startup credit（可选，如有时间）
 
-DeepSeek + 豆包都有面向初创团队的额度返还计划（参考开发方案 §8.3 *待拍板*）。
+DeepSeek + 豆包都有面向初创团队的额度返还计划。
 准备一份「项目简介 200 字 + 预估月用量」的资料，1-2 天能搞定。
 
 ---
 
-## 2. 决定 Android 开发环境方案
+## 2. Android 开发环境 — **已选 A：本机装 Android Studio**（2026-05-03）
 
-你这台 Linux ThinkStation 上**还没装** Android SDK / Android Studio / adb。
-三个选项，按推荐度排序：
-
-### 选项 A：本机装 Android Studio（推荐）
+### ✅ 选项 A：本机装 Android Studio
 
 - 装 [Android Studio Iguana 2023.2.1+](https://developer.android.com/studio)
 - 自动装 Android SDK（target 34）
@@ -59,20 +57,35 @@ DeepSeek + 豆包都有面向初创团队的额度返还计划（参考开发方
 - 优点：本仓库 + 真机调试一站式
 - 耗时：2-3 小时（含下载）
 
-### 选项 B：另外一台带 Android Studio 的机器（如 Mac）
+### 安装步骤（执行）
 
-- 把这个仓库 push 到一个 GitHub 私仓
-- 在 Mac 上 clone + 用 Android Studio 打开 `poc/poc-6-foreground-service`
-- 优点：不动你 Linux 机器
-- 缺点：双机切换
+```bash
+# JDK 17（如未装）
+sudo apt update
+sudo apt install -y openjdk-17-jdk
+sudo update-alternatives --config java   # 选 java 17
 
-### 选项 C：先用 Android 模拟器跑 PoC-6（不推荐做 12h 测试）
+# Android Studio (manual download)
+# 1) 浏览器开 https://developer.android.com/studio
+# 2) 下载 Linux 64-bit .tar.gz (~1.2GB)
+# 3) 解压: tar -xzf android-studio-*.tar.gz -C ~/
+# 4) 启动: ~/android-studio/bin/studio.sh
+# 5) 首启走 Setup Wizard, 装 SDK 34 + Build Tools + Platform Tools (含 adb)
+# 6) ~/.bashrc 加: export ANDROID_HOME=$HOME/Android/Sdk
+#                  export PATH=$PATH:$ANDROID_HOME/platform-tools
+```
 
-- Linux 上可以用 KVM-accelerated Android emulator
-- 但**模拟器无法验证 ROM 杀进程行为** —— 这正是 PoC-6 要测的
-- 只能用作 smoke test（"代码能编译能跑起来"）
+装完后验证：
 
-→ **强烈建议选项 A**。
+```bash
+adb version       # 应该有输出
+echo $ANDROID_HOME  # 应该非空
+```
+
+### 备用选项（已不选，仅留参考）
+
+- 选项 B：另一台带 Android Studio 的机器（如 Mac）—— 不选，要双机切换
+- 选项 C：Linux KVM Android emulator —— 不选，模拟器无法验证 ROM 杀进程行为
 
 ---
 
@@ -119,29 +132,21 @@ PoC-6 是 6 个 PoC 中**风险最高**的（30-50% 失败概率）。完整指�
 
 ---
 
-## 4. 4 个待拍板项（plan §8.3）
+## 4. 4 个待拍板项 — 已拍板（2026-05-03）
 
-每个 1-2 句话决定即可。这些不阻塞 Day-1 执行，但 W4 之前要拍。
+| # | 项 | 决定 |
+|---|---|---|
+| Q-A | 商业 OCR 预算（S1 看病用）| **不花** — 用免费 Tesseract，准确率约 60%。S1 体验受影响但能用，后续如必要再升级 |
+| Q-B | 律师 review 隐私协议预算 | **不花** — 自己用 ChatGPT 起草，承担应用商店审核风险（备选：找朋友圈律师朋友帮看一遍） |
+| Q-C | 海外（Google Play）阶段 0 是否同步 | **不上** — 阶段 0 仅 i18n 友好（代码上预留），阶段 1 末视情况启动 |
+| Q-D | 12 周硬目标 vs 16 周弹性 | **±30% 弹性** — 按 12 周推进但允许实际 12-16 周完成 |
 
-### Q-A: 商业 OCR 预算（S1 看病用）
-- 默认假设：可花 ¥1-2k/月买专业医疗 OCR（处方笔迹）
-- 不花：用免费 Tesseract，准确率约 60%（S1 体验受影响但能用）
-- 你的决定：______
+### 这些决策的下游影响
 
-### Q-B: 律师 review 隐私协议预算
-- 默认假设：愿意花 ¥3-5k 一次性
-- 不花：自己用 ChatGPT 起草，上线风险增加（应用商店审核可能因隐私协议条款被卡）
-- 你的决定：______
-
-### Q-C: 海外（Google Play）阶段 0 是否同步
-- 默认假设：阶段 0 不上，仅 i18n 友好（代码上预留）
-- 上：分散精力但海外审核更宽松，可作为国内被拒的备选渠道
-- 你的决定：______
-
-### Q-D: 12 周硬目标 vs 16 周弹性
-- 默认假设：按 12 周推进但允许 ±30% 弹性 → 实际 12-16 周
-- 硬 12 周：更紧迫但也容易牺牲质量
-- 你的决定：______
+- **Q-A 用 Tesseract**：S1 处方 OCR 加 fallback 机制（OCR 错误时引导用户手动补充关键药名/剂量）。production design 需改 §4.1 增加"手动补全"UI。
+- **Q-B 自起草协议**：上架前 30 分钟读一遍隐私协议，对照 6 大 ROM 应用商店各家"隐私协议"模板要求微调。任何高风险条款（如 24h 监听）双倍小心措辞。
+- **Q-C 阶段 0 不出海**：所有 prompts/scenario-* 短期内中文优先；i18n key 框架仍保留以便后期补 en-US.json。
+- **Q-D ±30% 弹性**：12 周计划写死的"W12 上线"实际允许到 W14-16，但每周 gate 指标不松。
 
 ---
 
@@ -173,20 +178,26 @@ corepack prepare yarn@stable --activate
 
 ---
 
-## 6. GitHub 仓库（如果要）
+## 6. GitHub 仓库 — **已建立**（2026-05-03）
 
-我已经 `git init` 但还没 commit（等你 review 后决定要不要先 commit）。
-如果决定建私仓：
+仓库地址：https://github.com/SensenLiu/livet
+- ✅ git init + main 分支
+- ✅ remote origin = git@github.com:SensenLiu/livet.git
+- ✅ 已 push commit `ca82954`（67 文件 / 8829 行）
+- ✅ git config user.email = `1105803409@qq.com` (local repo only)
+- ✅ CI 已配置 5 个 job（push 后自动跑）
+
+后续推送：
 
 ```bash
-gh repo create life-crutch --private --source=/home/lss/life_crutch --remote=origin
-git add .
-git commit -m "initial: docs + gateway + poc-4 + poc-6 + scripts"
-git push -u origin main
+git status  # check
+git add -p  # selective add
+git commit -m "feat: ..."
+git push
 ```
 
-**别忘了**：`.env` / `*.db` / `node_modules` 都已在 `.gitignore`。但每次
-推送前手动 `git status` 一眼，避免 secrets 漏出。
+**别忘了**：`.env` / `*.db` / `node_modules` / `.venv` 都已在 `.gitignore`。
+但每次推送前手动 `git status` 一眼，避免 secrets 漏出。
 
 ---
 

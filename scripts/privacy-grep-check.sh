@@ -41,6 +41,7 @@ EXCLUDES=(
   ':(exclude)*/.gradle/**'
   ':(exclude)*/.cxx/**'
   ':(exclude)docs/**'                 # privacy design docs may reference audio
+  ':(exclude).gitignore'              # .gitignore *contains* the patterns we ban — that's the point
   ':(exclude)scripts/privacy-grep-check.sh'  # the script itself
   ':(exclude)gateway/api/asr_proxy.py'  # ASR forwarding code legitimately mentions audio in comments
   ':(exclude)gateway/api/error_log.py'  # privacy scrub list mentions "audio" / "pcm"

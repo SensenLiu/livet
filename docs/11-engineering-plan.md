@@ -89,25 +89,20 @@
 
 ---
 
-### 1.3 ASR：云端流式多供应商路由
+### 1.3 ASR：豆包/火山引擎单供应商（SAMI 实时语音识别）
 
-**MVP 全部用云端流式 ASR**（端侧 ASR 留 V1.5 PoC）。
+> **v0.2 简化（2026-05-03）**：原计划讯飞 + 阿里 + 火山三供应商兜底，
+> 但 MVP 阶段过度设计。已合并为单供应商（豆包/火山引擎）：
+> 同一个控制台、同一套 AK/SK、与备用 LLM（豆包 Pro）共享 vendor。
+> 故障兜底等 V0.5+ 真实数据出来再决定加哪家。
 
-| 供应商 | 优先级 | 计费 | 优势 | 劣势 |
-|---|---|---|---|---|
-| **讯飞实时语音转写** | 默认 | 约 ¥3.5/小时 | 中文最准 + 流式低延迟 | 接入门槛中等 |
-| **阿里云智能语音交互** | 备用 1 | 约 ¥3.0/小时 | 价格优 + 中文优 | 流式 SDK 文档稍弱 |
-| **火山引擎流式 ASR** | 备用 2 | 约 ¥2.5/小时 | 与豆包同生态 | 较新，稳定性〔需验证〕|
-
-**路由策略**:
-```
-默认讯飞 → 99% 请求
-讯飞 5xx 错误 / 延迟 > 2s → 自动切阿里
-阿里也失败 → 切火山
-任意供应商成功率 < 90%（10 分钟窗口）→ 自动切下一档
-```
-
-路由实现：BFF 层（gateway/asr-router.py），不在端侧做（避免 key 暴露）。
+| 项 | 决定 | 关键理由 |
+|---|---|---|
+| 主选 | 豆包 / 火山引擎 SAMI 流式 ASR | 中文准确率 ~96-98%；与 LLM 同 vendor |
+| 控制台 | https://console.volcengine.com/speech/ | AK/SK 签名（与 LLM bearer token 不同）|
+| 计费 | 约 ¥3/小时 | 阶段 0 月成本约 ¥150-300 |
+| 弱网降级 | 客户端 buffer + 重试 ≤ 3 次 | 见 §5 R8 |
+| 二供应商 | 推迟到 V0.5+ | 仅当生产成功率 < 95% 才加讯飞 |
 
 **为什么不用端侧 ASR (Whisper Tiny ONNX)**：
 - Whisper Tiny 中文准确率 < 70%（生产不可用）
@@ -116,28 +111,28 @@
 - → V1.5 再评估（届时可能有更小更准的中文 ASR）
 
 **已知坑**：
-- 〔需验证〕讯飞实时转写的 WebSocket 在 4G 弱网下的稳定性
-- 〔需验证〕三家供应商的"严格匿名"模式（不存音频）是否所有套餐都支持
-- 弱网降级（见 §5 R8）
+- 〔需验证〕豆包 SAMI WebSocket 在 4G 弱网下的稳定性
+- 〔需验证〕"严格匿名"模式（不存音频）是否所有套餐都支持
 
 → 对应产品设计 §8.1（云端 ASR 的隐私边界）
 
 ---
 
-### 1.4 TTS：阿里云 CosyVoice 云端
+### 1.4 TTS：豆包/火山引擎单供应商（语音合成大模型）
+
+> **v0.2 简化**：原计划阿里 CosyVoice。合并到豆包 = 1 个 vendor 统一管 ASR + TTS。
 
 | 项 | 决定 |
 |---|---|
-| 主选 | 阿里云 CosyVoice 流式 TTS（中文表现优 + 自然度高）|
+| 主选 | 豆包/火山引擎 语音合成大模型（CosyVoice 风格）|
+| 默认音色 | `zh_female_qingxin_v2_mars_bigtts`（温柔不打鸡血风格）|
 | 用途 | 主动询问回复（🟢 模式）+ S5 引导语音 + S8 复盘语音播报 |
 | 不用 TTS 的场景 | 🟡 被动提示（永不发声朗读，只播提示音；铁律 2）|
 | 提示音 | 5 个预制 .ogg 音色文件（不走 TTS）打包进 App |
 
-**为什么不用 ElevenLabs 国内版**：成本高 5-10 倍 + 国内合规便利度低。CosyVoice 已能满足。
-
 **已知坑**：
-- 〔需验证〕CosyVoice 流式延迟（首字节 < 500ms 是要求）
-- 〔需验证〕云端 TTS 是否支持本产品场景的"温柔不打鸡血"音色
+- 〔需验证〕首字节延迟（< 500ms 是要求）
+- 〔需验证〕"温柔不打鸡血"音色是否在豆包默认库中
 
 → 对应产品设计 §1.1 / §4.3 / §9.1
 
@@ -283,8 +278,8 @@ gateway/
 ├── main.py                  # FastAPI 入口
 ├── api/
 │   ├── llm_proxy.py         # 大模型 API key 代理 + 双供应商路由
-│   ├── asr_proxy.py         # ASR API 代理 + 多供应商路由
-│   ├── tts_proxy.py         # TTS API 代理
+│   ├── asr_proxy.py         # ASR API 代理 (豆包/火山 单供应商)
+│   ├── tts_proxy.py         # TTS API 代理 (豆包/火山 单供应商)
 │   ├── subscription.py      # 微信支付/订阅校验
 │   └── error_log.py         # Sentry 转发(可关)
 ├── core/
@@ -511,7 +506,7 @@ graph LR
     ASR --> Gateway[BFF Gateway]
     LLM --> Gateway
     
-    Gateway -.-> External[DeepSeek / 豆包 / 讯飞 / 阿里 / 火山]
+    Gateway -.-> External[DeepSeek + 豆包/火山 (LLM/ASR/TTS)]
     Gateway --> Sentry
     
     AndroidNative[Android Native:<br/>ForegroundService<br/>BatteryHelper<br/>MediaButton] --> Audio
@@ -602,13 +597,13 @@ export interface PrivacyControls {
 
 | 维度 | 内容 |
 |---|---|
-| 目标 | 验证 Android 麦克风 PCM → WebSocket → 讯飞 ASR → 文字 完整链路 |
+| 目标 | 验证 Android 麦克风 PCM → WebSocket → 豆包 ASR → 文字 完整链路 |
 | 不验证 | LLM、提示、UI 美观 |
-| 依赖库 | react-native-audio-recorder-player + 讯飞 SDK / WebSocket SDK |
+| 依赖库 | react-native-audio-recorder-player + 豆包 SAMI 流式 ASR (火山引擎) |
 | 关键代码片段 | 见下 |
 | 验证标准 | ① 流式延迟 < 500ms；② 中文准确率 > 90%；③ 无音频文件落盘 |
 | 预估耗时 | 3 人日 |
-| 失败 fallback | 改用阿里云 ASR；如果都不行，停下重新评估技术栈 |
+| 失败 fallback | V0.5+ 加讯飞作为第二供应商；spike 阶段失败先 debug 豆包 SAMI 接入 |
 
 ```typescript
 // poc-1 关键片段
@@ -1005,7 +1000,7 @@ mkdir -p poc/poc-4-memory-engine
 
 #### Day-30 优先级
 3. Silero VAD 在国产 SoC 的功耗与误激活率
-4. 讯飞 ASR 流式 WebSocket 在 4G 弱网的稳定性
+4. 豆包 SAMI 流式 ASR 在 4G 弱网的稳定性
 5. DeepSeek-V3 在 hint-timing 高频低延迟场景的响应时间
 6. BGE-small-zh ONNX 在中低端机的推理延迟
 
@@ -1024,17 +1019,21 @@ mkdir -p poc/poc-4-memory-engine
 1. **sqlite-vec 在 RN（1 天）**：决定 memory engine 整个栈
 2. **Foreground Service 在 6 ROM（2 天）**：决定被动提示是否可行
 3. **Silero VAD 功耗（1 天）**：决定 VAD 路径是否走得通
-4. **讯飞 ASR 流式（半天）**：决定 ASR 选型
+4. **豆包 SAMI ASR 流式（半天）**：决定 ASR 选型
 
 如果以上 4 个 spike 中任一失败，整个开发计划要重新评估。**强烈建议在 W1 第 1-3 天集中做完这 4 个 spike**，再正式开始 W1-W2 基建周。
 
-### 哪些是"我替你做的假设"（标 *待用户拍板*）
+### 已拍板的决策（2026-05-03）
 
-- *待用户拍板*：是否买商业 OCR 服务（S1 处方）or 用免费方案
-- *待用户拍板*：律师 review 隐私协议预算（¥3-5k）是否给
-- *待用户拍板*：海外（Google Play）阶段 0 同步上 还是 阶段 1 才上
+- ✅ **商业 OCR**：不买，用免费 Tesseract（精度约 60%；S1 加"手动补全"UI 兜底）
+- ✅ **律师协议**：不花钱外包，自己用 ChatGPT 起草后让朋友圈律师朋友帮看一遍
+- ✅ **海外路线**：阶段 0 不出海（仅 i18n 友好），阶段 1 末再启动
+- ✅ **资源弹性**：按 12 周计划推进，允许 ±30% 弹性（实际 12-16 周）
+- ✅ **ASR/TTS 供应商**：合并到豆包/火山一家（v0.2 简化）
+
+### 仍待拍板
+
 - *待用户拍板*：是否申请 DeepSeek/豆包 startup credit（需提交资料 + 等待）
-- *待用户拍板*：12 周是否真按 16 周 ±30% 弹性，还是仍以 12 周硬目标推进
 
 ---
 
@@ -1117,5 +1116,5 @@ mkdir -p poc/poc-4-memory-engine
 
 **文档版本**：v0.1（2026-05-02）
 **作者**：AI agent（Claude）
-**待用户决策项**：商业 OCR 预算 / 律师预算 / 海外节奏 / startup credit 申请 / 12 周硬目标 vs 16 周弹性
+**待用户决策项**：startup credit 申请（其余已拍板：OCR=Tesseract / 律师协议=自起草 / 海外=阶段 0 不上 / 资源=±30% 弹性 / ASR+TTS=合并到豆包）
 **下一版触发**：4 个 Day-1 spike 完成 或 W2 基建周结束

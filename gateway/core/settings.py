@@ -38,20 +38,17 @@ class Settings(BaseSettings):
     doubao_endpoint_id: str = ""
     doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
 
-    # ===== ASR =====
-    xfyun_app_id: str = ""
-    xfyun_api_key: str = ""
-    xfyun_api_secret: str = ""
-    aliyun_asr_app_key: str = ""
-    aliyun_asr_ak_id: str = ""
-    aliyun_asr_ak_secret: str = ""
+    # ===== Voice stack (ASR + TTS) — single vendor: 豆包 / 火山引擎 =====
+    # ASR uses Volcengine real-time speech (SAMI streaming).
+    # TTS uses Volcengine voice synthesis large model (CosyVoice-style).
+    # Both authenticate via AK/SK signing — distinct from LLM bearer token.
+    # Console: https://console.volcengine.com/speech/
+    volc_ak_id: str = ""
+    volc_sk: str = ""
     volc_asr_app_id: str = ""
-    volc_asr_token: str = ""
-
-    # ===== TTS =====
-    aliyun_tts_ak_id: str = ""
-    aliyun_tts_ak_secret: str = ""
-    aliyun_tts_voice: str = "cosyvoice-v1"
+    volc_asr_cluster: str = "volcengine_streaming_common"
+    volc_tts_app_id: str = ""
+    volc_tts_voice: str = "zh_female_qingxin_v2_mars_bigtts"
 
     # ===== Subscription =====
     wechat_app_id: str = ""

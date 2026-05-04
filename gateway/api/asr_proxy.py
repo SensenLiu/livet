@@ -1,16 +1,25 @@
-"""ASR proxy: WebSocket bridge from mobile client to upstream (讯飞/阿里/火山).
+"""ASR proxy: WebSocket bridge from mobile client to upstream ASR.
 
-Why we proxy:
-  - Upstream API keys must stay server-side (else reverse-engineering the APK
+Stage-0 design: single vendor (豆包/火山引擎 SAMI streaming).
+Multi-vendor fallback was originally planned (讯飞 + 阿里 + 火山) but trimmed
+to one vendor per the user's scope-simplification call: voice stack stays on
+豆包/火山, since the same vendor already provides our backup LLM (豆包 Pro)
+and gives us one console / one bill / one SDK.
+
+Why we still proxy (instead of letting the app talk to 火山 directly):
+  - Upstream AK/SK must stay server-side (else reverse-engineering the APK
     leaks them).
-  - Multi-provider auto-fallback per-stream.
-  - Privacy: opportunity to enforce 'opaque chunks pass through, never stored'
-    invariant in one place (no `.write()` allowed).
+  - Privacy: opportunity to enforce 'opaque chunks pass through, never
+    persisted' invariant in one place. CI grep enforces this.
 
 Privacy contract:
   - Audio bytes are forwarded chunk-by-chunk to upstream.
   - We do NOT log audio. We do NOT persist audio. CI grep enforces this
     (see scripts/privacy-grep-check.sh).
+
+Future fallback (V0.5+): if 豆包 ASR success rate drops below threshold in
+production, add 讯飞 as a second provider. Until then keep this single-vendor
+to minimize complexity.
 """
 from __future__ import annotations
 
@@ -22,10 +31,9 @@ router = APIRouter()
 @router.websocket("/stream")
 async def asr_stream(
     ws: WebSocket,
-    provider: str = Query(default="xfyun"),
     token: str = Query(default=""),
 ) -> None:
-    """Bidirectional WebSocket: client sends PCM chunks, server returns transcript text.
+    """Bidirectional WebSocket: client sends PCM chunks, server returns transcript.
 
     Wire protocol (client → server):
         - binary PCM frames (16kHz / 16-bit / mono), <=200ms each
@@ -36,17 +44,17 @@ async def asr_stream(
         - text frame `{"type":"error",   "code": "...", "msg": "..."}`
     """
     # TODO(PoC-1, W2): verify token (reuse core.auth)
-    # TODO(PoC-1, W2): connect to upstream provider WebSocket (讯飞先行)
-    # TODO(W4): provider auto-fallback on first connect failure
+    # TODO(PoC-1, W2): connect to 豆包/火山 SAMI streaming WebSocket
+    #                  (signing: AK/SK; protocol: binary frames)
     await ws.accept()
     try:
         while True:
             msg = await ws.receive()
             if msg["type"] == "websocket.disconnect":
                 break
-            # Echo placeholder until upstream is wired:
+            # Stub until upstream is wired:
             if "bytes" in msg:
-                # TODO: forward bytes to upstream ASR; enforce no .write to disk
+                # TODO: forward bytes to 火山 ASR; enforce no .write to disk
                 size = len(msg["bytes"])
                 await ws.send_json({"type": "partial", "text": f"[stub recv {size}b]"})
             elif "text" in msg:
@@ -57,5 +65,5 @@ async def asr_stream(
         return
 
 
-# TODO(PoC-1, W2): implement xfyun streaming bridge
-# TODO(W4):       implement aliyun + volc bridges + auto-fallback
+# TODO(PoC-1, W2): implement 豆包/火山 SAMI streaming bridge
+# TODO(V0.5+):     add 讯飞 secondary provider only if 豆包 production success rate < 0.95
