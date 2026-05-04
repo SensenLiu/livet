@@ -10,14 +10,13 @@ import asyncio
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Optional
 
 
 @dataclass
 class ProviderStats:
     name: str
-    window: Deque[bool] = field(default_factory=lambda: deque(maxlen=50))
-    latencies: Deque[float] = field(default_factory=lambda: deque(maxlen=50))
+    window: deque[bool] = field(default_factory=lambda: deque(maxlen=50))
+    latencies: deque[float] = field(default_factory=lambda: deque(maxlen=50))
     last_call_at: float = 0.0
     consecutive_failures: int = 0
 
@@ -28,7 +27,7 @@ class ProviderStats:
         return sum(self.window) / len(self.window)
 
     @property
-    def p50_latency_ms(self) -> Optional[float]:
+    def p50_latency_ms(self) -> float | None:
         if not self.latencies:
             return None
         sorted_lat = sorted(self.latencies)
@@ -49,7 +48,7 @@ class HealthChecker:
     """
 
     def __init__(self) -> None:
-        self._stats: Dict[str, ProviderStats] = defaultdict(
+        self._stats: dict[str, ProviderStats] = defaultdict(
             lambda: ProviderStats(name="?")
         )
         self._lock = asyncio.Lock()
@@ -66,7 +65,7 @@ class HealthChecker:
             stat = self._stats.setdefault(provider, ProviderStats(name=provider))
             stat.record(success, latency_s)
 
-    def pick_primary(self, candidates: List[str]) -> str:
+    def pick_primary(self, candidates: list[str]) -> str:
         """Pick the freshest healthy candidate, in caller-given preference order."""
         for name in candidates:
             stat = self._stats.get(name)
@@ -77,7 +76,7 @@ class HealthChecker:
         # all unhealthy — return the first (we'll still try, with fallback inside)
         return candidates[0]
 
-    def snapshot(self) -> Dict[str, dict]:
+    def snapshot(self) -> dict[str, dict]:
         return {
             name: {
                 "success_rate": round(stat.success_rate, 3),

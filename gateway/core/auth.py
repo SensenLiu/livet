@@ -17,7 +17,6 @@ import secrets
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from hashlib import sha256
-from typing import Optional
 
 from fastapi import Header, HTTPException, status
 
@@ -66,10 +65,10 @@ def verify_token(token: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"invalid token: {exc}",
-        )
+        ) from exc
 
 
-async def auth_dep(authorization: Optional[str] = Header(default=None)) -> dict:
+async def auth_dep(authorization: str | None = Header(default=None)) -> dict:
     """FastAPI dependency: extract + verify Bearer token."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(

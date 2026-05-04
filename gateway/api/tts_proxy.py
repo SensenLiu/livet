@@ -10,8 +10,6 @@ vendor for both ASR and TTS. Same console, same AK/SK.
 """
 from __future__ import annotations
 
-from typing import Dict
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -25,7 +23,7 @@ router = APIRouter()
 @limit("30/minute")
 async def synth(
     request: Request,
-    body: Dict,
+    body: dict,
     user: dict = Depends(auth_dep),
 ) -> StreamingResponse:
     """POST {text, voice?, speed?, pitch?} -> audio/mpeg stream."""

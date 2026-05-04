@@ -9,8 +9,7 @@ Logging: only timing + success/failure + provider name.
 """
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,13 +17,12 @@ from fastapi.responses import StreamingResponse
 
 from core.auth import auth_dep
 from core.rate_limit import limit
-from core.routing import HealthChecker
 from core.settings import settings
 
 router = APIRouter()
 
 
-def _provider_payload(provider: str, body: Dict[str, Any]) -> Dict[str, Any]:
+def _provider_payload(provider: str, body: dict[str, Any]) -> dict[str, Any]:
     """Adapt our internal request to provider-specific OpenAI-compatible schema."""
     if provider == "deepseek":
         return {**body, "model": body.get("model", "deepseek-chat")}
@@ -49,7 +47,7 @@ def _provider_key(provider: str) -> str:
 
 
 async def _call_one(
-    provider: str, body: Dict[str, Any], stream: bool, timeout: float = 15.0
+    provider: str, body: dict[str, Any], stream: bool, timeout: float = 15.0
 ) -> httpx.Response:
     url = _provider_url(provider)
     payload = _provider_payload(provider, {**body, "stream": stream})
@@ -68,17 +66,15 @@ async def _call_one(
 @limit("60/minute")
 async def chat(
     request: Request,
-    body: Dict[str, Any],
+    body: dict[str, Any],
     user: dict = Depends(auth_dep),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Non-streaming chat completion with auto-fallback."""
-    health: HealthChecker = request.app.state.limiter._app_or_blueprint  # type: ignore
-    # ^ small hack — wire HealthChecker via app.state in main.py once needed.
+    # TODO(W4): wire HealthChecker via app.state + record per-call latency/success
 
     candidates = ["deepseek", "doubao"]
-    last_err: Optional[Exception] = None
+    last_err: Exception | None = None
     for provider in candidates:
-        t0 = time.time()
         try:
             resp = await _call_one(provider, body, stream=False)
             resp.raise_for_status()
@@ -94,7 +90,7 @@ async def chat(
 @limit("60/minute")
 async def chat_stream(
     request: Request,
-    body: Dict[str, Any],
+    body: dict[str, Any],
     user: dict = Depends(auth_dep),
 ) -> StreamingResponse:
     """SSE streaming with auto-fallback on first chunk failure."""
@@ -103,12 +99,14 @@ async def chat_stream(
         try:
             resp = await _call_one(provider, body, stream=True)
 
-            async def event_stream():
-                async for chunk in resp.aiter_bytes():
+            # Bind resp via default argument to avoid late-binding closure
+            # bug if we ever extend the loop with multiple in-flight responses.
+            async def event_stream(_resp: httpx.Response = resp):
+                async for chunk in _resp.aiter_bytes():
                     yield chunk
 
             return StreamingResponse(event_stream(), media_type="text/event-stream")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112  # spike: log once HealthChecker is wired (W4)
             continue
     raise HTTPException(status_code=502, detail="all providers unavailable")
 

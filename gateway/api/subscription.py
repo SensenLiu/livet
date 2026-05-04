@@ -7,8 +7,6 @@ Endpoints:
 """
 from __future__ import annotations
 
-from typing import Dict, Optional
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -19,7 +17,7 @@ router = APIRouter()
 
 class TokenIssueRequest(BaseModel):
     device_id: str
-    receipt: Optional[str] = None  # optional subscription receipt
+    receipt: str | None = None  # optional subscription receipt
 
 
 class TokenIssueResponse(BaseModel):
@@ -45,12 +43,12 @@ async def issue(req: TokenIssueRequest) -> TokenIssueResponse:
 
 
 @router.post("/verify/wechat")
-async def verify_wechat(body: Dict) -> Dict:
+async def verify_wechat(body: dict) -> dict:
     # TODO(W11): WeChat Pay v3 callback verification
     raise HTTPException(status_code=501, detail="WeChat verify not implemented (W11)")
 
 
 @router.post("/verify/apple")
-async def verify_apple(body: Dict) -> Dict:
+async def verify_apple(body: dict) -> dict:
     # TODO(V1.5): Apple IAP receipt verification
     raise HTTPException(status_code=501, detail="Apple IAP not in V1")

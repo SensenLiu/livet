@@ -10,7 +10,7 @@ Privacy contract:
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import sentry_sdk
 from fastapi import APIRouter, Depends, Request
@@ -50,9 +50,9 @@ _BLOCKED_KEY_SUBSTRINGS = (
 )
 
 
-def _scrub(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _scrub(payload: dict[str, Any]) -> dict[str, Any]:
     """Defensively drop fields that smell like dialogue/PII content."""
-    out: Dict[str, Any] = {}
+    out: dict[str, Any] = {}
     for k, v in payload.items():
         kl = k.lower()
         if any(bad in kl for bad in _BLOCKED_KEY_SUBSTRINGS):
@@ -68,9 +68,9 @@ def _scrub(payload: Dict[str, Any]) -> Dict[str, Any]:
 @limit("30/minute")
 async def report(
     request: Request,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     user: dict = Depends(auth_dep),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     _maybe_init_sentry()
     if not _initialized:
         return {"forwarded": False, "reason": "sentry not configured"}

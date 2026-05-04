@@ -1,8 +1,8 @@
 # PoC-4 sqlite-vec spike — Report
 
 - vec_version: (see stdout)
-- Insert 1000 rows: **24.7 ms** (PASS ✓)
-- Top-5 query (avg over 50): **0.29 ms** (p50=0.27 / p95=0.33; PASS ✓)
+- Insert 1000 rows: **27.3 ms** (PASS ✓)
+- Top-5 query (avg over 50): **0.29 ms** (p50=0.27 / p95=0.38; PASS ✓)
 - DB size: 4.0 KB
 - Schema: compiled OK
 - Cross-table FK: works

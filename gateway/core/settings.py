@@ -5,8 +5,6 @@ go through `settings` so missing keys fail loudly at boot.
 """
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,7 +21,7 @@ class Settings(BaseSettings):
     env: str = "dev"
     port: int = 8000
     log_level: str = "info"
-    cors_origins: List[str] = Field(default_factory=lambda: ["*"])
+    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     # ===== Sentry =====
     sentry_dsn: str = ""
@@ -58,7 +56,8 @@ class Settings(BaseSettings):
     apple_iap_shared_secret: str = ""
 
     # ===== Auth =====
-    device_token_secret: str = "change-me-in-prod"
+    # noqa S105: intentional placeholder; .env override required in prod
+    device_token_secret: str = "change-me-in-prod"  # noqa: S105
 
 
 settings = Settings()

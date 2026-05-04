@@ -7,3 +7,7 @@ slowapi>=0.1.9
 redis>=5.0,<6
 python-multipart>=0.0.6
 sentry-sdk[fastapi]>=1.40,<2
+# Backport: lets Pydantic evaluate PEP 585 (list[str]) / PEP 604 (X | None)
+# annotations on Python 3.8/3.9. No-op on 3.10+. Required because we use the
+# modern syntax everywhere (including BaseModel fields) per ruff UP006/UP045.
+eval-type-backport>=0.2; python_version < "3.10"
