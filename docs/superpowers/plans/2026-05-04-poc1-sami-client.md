@@ -330,11 +330,15 @@ Expected: 3 个新测试 fail。
 def final_latency_ms(t_send_end: float, t_recv_final: float) -> int:
     """Latency from sending the last PCM frame to receiving the final transcript.
 
-    Inputs are time.monotonic()-style seconds. Returns whole milliseconds.
-    Clamps negative deltas (clock skew, buggy callers) to 0.
+    Inputs are time.monotonic()-style seconds. Returns whole milliseconds,
+    truncated toward zero. Clamps negative deltas (clock skew, buggy callers) to 0.
+
+    Implementation note: we round the delta to integer microseconds before
+    truncating to ms, so e.g. (101.234 - 100.0) yields 1234 instead of 1233
+    (IEEE-754 representation of 1.234 is slightly under 1.234).
     """
-    delta = t_recv_final - t_send_end
-    return max(0, int(delta * 1000))
+    delta_us = round((t_recv_final - t_send_end) * 1_000_000)
+    return max(0, delta_us // 1000)
 ```
 
 - [ ] **Step 4.4：跑测试，确认 pass**

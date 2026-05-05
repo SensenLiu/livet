@@ -56,3 +56,19 @@ def test_cer_empty_reference_with_nonempty_hyp_returns_one():
 def test_cer_normalizes_inputs():
     # Punct difference should not count as error
     assert cer("你好，世界", "你好世界") == 0.0
+
+
+from metrics import final_latency_ms
+
+
+def test_final_latency_basic():
+    assert final_latency_ms(t_send_end=100.0, t_recv_final=101.234) == 1234
+
+
+def test_final_latency_rounds_down():
+    assert final_latency_ms(t_send_end=0.0, t_recv_final=0.0009) == 0
+
+
+def test_final_latency_negative_clamps_to_zero():
+    # Defensive: clock skew shouldn't produce negative latencies
+    assert final_latency_ms(t_send_end=10.0, t_recv_final=9.5) == 0
