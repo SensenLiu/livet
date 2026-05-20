@@ -90,3 +90,57 @@ def build_header(
         (int(serialization) << 4) | int(compression),
         0x00,
     ])
+
+
+import json
+import struct
+
+
+def build_full_client_request(
+    config: dict,
+    sequence: int = 1,
+) -> bytes:
+    """Build a FULL_CLIENT_REQUEST frame with JSON payload.
+
+    Layout: header (4) + sequence (4 BE int32) + size (4 BE uint32) + JSON payload.
+    """
+    header = build_header(
+        msg_type=MessageType.FULL_CLIENT_REQUEST,
+        flags=MessageFlags.POS_SEQUENCE,
+        serialization=Serialization.JSON,
+        compression=Compression.NONE,
+    )
+    payload = json.dumps(config, ensure_ascii=False).encode("utf-8")
+    return (
+        header
+        + struct.pack(">i", sequence)
+        + struct.pack(">I", len(payload))
+        + payload
+    )
+
+
+def build_audio_frame(
+    pcm: bytes,
+    sequence: int,
+    is_last: bool,
+) -> bytes:
+    """Build an AUDIO_ONLY_REQUEST frame.
+
+    is_last=True signals end of stream by:
+      - flags = LAST_POS_SEQ (0x3)
+      - sequence number is negated (SAMI convention)
+    """
+    flags = MessageFlags.LAST_POS_SEQ if is_last else MessageFlags.POS_SEQUENCE
+    header = build_header(
+        msg_type=MessageType.AUDIO_ONLY_REQUEST,
+        flags=flags,
+        serialization=Serialization.RAW,
+        compression=Compression.NONE,
+    )
+    seq_value = -sequence if is_last else sequence
+    return (
+        header
+        + struct.pack(">i", seq_value)
+        + struct.pack(">I", len(pcm))
+        + pcm
+    )
