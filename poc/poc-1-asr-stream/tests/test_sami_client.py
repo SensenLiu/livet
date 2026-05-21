@@ -129,3 +129,61 @@ def test_build_audio_frame_last():
     # We flip sign on is_last=True.
     seq = struct.unpack(">i", frame[4:8])[0]
     assert seq == -3
+
+
+from sami_client import parse_server_frame
+
+
+def _make_server_frame(msg_type: int, flags: int, ser: int, comp: int,
+                      sequence: int | None, payload: bytes) -> bytes:
+    """Helper: hand-craft a server frame for parser tests."""
+    header = bytes([
+        (0x1 << 4) | 0x1,
+        (msg_type << 4) | flags,
+        (ser << 4) | comp,
+        0x00,
+    ])
+    body = b""
+    if sequence is not None:
+        body += struct.pack(">i", sequence)
+    body += struct.pack(">I", len(payload)) + payload
+    return header + body
+
+
+def test_parse_server_full_response_json():
+    payload = json.dumps({"result": {"text": "你好世界"}}).encode("utf-8")
+    raw = _make_server_frame(
+        msg_type=0x9, flags=0x1, ser=0x1, comp=0x0,
+        sequence=10, payload=payload,
+    )
+    evt = parse_server_frame(raw)
+    assert evt["msg_type"] == MessageType.FULL_SERVER_RESPONSE
+    assert evt["sequence"] == 10
+    assert evt["payload"] == {"result": {"text": "你好世界"}}
+    assert evt["is_last"] is False
+
+
+def test_parse_server_full_response_last():
+    payload = json.dumps({"result": {"text": "完整文本"}}).encode("utf-8")
+    raw = _make_server_frame(
+        msg_type=0x9, flags=0x3, ser=0x1, comp=0x0,
+        sequence=20, payload=payload,
+    )
+    evt = parse_server_frame(raw)
+    assert evt["is_last"] is True
+
+
+def test_parse_server_error_frame():
+    payload = json.dumps({"error": "bad token", "code": 1003}).encode("utf-8")
+    raw = _make_server_frame(
+        msg_type=0xF, flags=0x0, ser=0x1, comp=0x0,
+        sequence=None, payload=payload,
+    )
+    evt = parse_server_frame(raw)
+    assert evt["msg_type"] == MessageType.SERVER_ERROR
+    assert evt["payload"]["code"] == 1003
+
+
+def test_parse_server_truncated_raises_protocol_error():
+    with pytest.raises(SAMIProtocolError):
+        parse_server_frame(b"\x11\x91")  # too short for header

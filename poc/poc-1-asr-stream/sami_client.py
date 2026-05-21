@@ -144,3 +144,66 @@ def build_audio_frame(
         + struct.pack(">I", len(pcm))
         + pcm
     )
+
+
+def parse_server_frame(raw: bytes) -> dict:
+    """Parse a server frame.
+
+    Returns:
+        {
+            "msg_type": MessageType,
+            "is_last": bool,
+            "sequence": int | None,
+            "payload": dict | bytes,   # dict if JSON, bytes otherwise
+        }
+
+    Raises SAMIProtocolError on malformed input.
+    """
+    if len(raw) < 4:
+        raise SAMIProtocolError(f"frame too short: {len(raw)} bytes")
+
+    msg_type_int = (raw[1] >> 4) & 0x0F
+    flags = raw[1] & 0x0F
+    ser = (raw[2] >> 4) & 0x0F
+
+    try:
+        msg_type = MessageType(msg_type_int)
+    except ValueError as e:
+        raise SAMIProtocolError(f"unknown msg_type {msg_type_int:#x}") from e
+
+    is_last = (flags & int(MessageFlags.LAST_NO_SEQ)) != 0  # 0x2 bit set
+
+    cursor = 4
+    sequence: int | None = None
+    if (flags & int(MessageFlags.POS_SEQUENCE)) != 0:  # 0x1 bit set
+        if len(raw) < cursor + 4:
+            raise SAMIProtocolError("truncated sequence field")
+        sequence = struct.unpack(">i", raw[cursor:cursor + 4])[0]
+        cursor += 4
+
+    if len(raw) < cursor + 4:
+        raise SAMIProtocolError("truncated payload size field")
+    size = struct.unpack(">I", raw[cursor:cursor + 4])[0]
+    cursor += 4
+
+    if len(raw) < cursor + size:
+        raise SAMIProtocolError(
+            f"declared payload {size}B but only {len(raw) - cursor}B available"
+        )
+
+    body = raw[cursor:cursor + size]
+    payload: dict | bytes
+    if ser == int(Serialization.JSON):
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise SAMIProtocolError(f"invalid JSON payload: {e}") from e
+    else:
+        payload = body
+
+    return {
+        "msg_type": msg_type,
+        "is_last": is_last,
+        "sequence": sequence,
+        "payload": payload,
+    }
