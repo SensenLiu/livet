@@ -88,3 +88,46 @@ async def test_chunks_at_realtime_pace_paces(monkeypatch):
     # asyncio.sleep is mocked (real time keeps advancing while virtual time
     # doesn't), so we only verify the pacing function attempts sleeps at all.
     assert all(s >= 0 for s in sleeps)
+
+
+import wave
+from run import read_wav_pcm, WavFormatError
+
+
+def _write_wav(path, *, rate, channels, sampwidth, frames):
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(sampwidth)
+        w.setframerate(rate)
+        w.writeframes(frames)
+
+
+def test_read_wav_pcm_happy_path(tmp_path):
+    wav = tmp_path / "ok.wav"
+    pcm = b"\x00\x01" * 16000  # 1 second
+    _write_wav(wav, rate=16000, channels=1, sampwidth=2, frames=pcm)
+    out = read_wav_pcm(wav)
+    assert out == pcm
+
+
+def test_read_wav_pcm_wrong_rate_raises(tmp_path):
+    wav = tmp_path / "bad.wav"
+    _write_wav(wav, rate=44100, channels=1, sampwidth=2, frames=b"\x00\x01" * 100)
+    with pytest.raises(WavFormatError) as exc:
+        read_wav_pcm(wav)
+    assert "16000" in str(exc.value)
+    assert "44100" in str(exc.value)
+
+
+def test_read_wav_pcm_wrong_channels_raises(tmp_path):
+    wav = tmp_path / "bad.wav"
+    _write_wav(wav, rate=16000, channels=2, sampwidth=2, frames=b"\x00\x01\x02\x03" * 100)
+    with pytest.raises(WavFormatError):
+        read_wav_pcm(wav)
+
+
+def test_read_wav_pcm_wrong_sampwidth_raises(tmp_path):
+    wav = tmp_path / "bad.wav"
+    _write_wav(wav, rate=16000, channels=1, sampwidth=1, frames=b"\x00" * 100)
+    with pytest.raises(WavFormatError):
+        read_wav_pcm(wav)

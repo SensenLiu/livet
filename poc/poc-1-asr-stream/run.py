@@ -103,3 +103,25 @@ async def chunks_at_realtime_pace(
         first = False
         next_send_t += target_interval_s
         yield chunk
+
+
+class WavFormatError(Exception):
+    """WAV file is not 16kHz/16-bit/mono."""
+
+
+def read_wav_pcm(path: Path) -> bytes:
+    """Read a WAV file and return raw PCM bytes.
+
+    Raises WavFormatError if the format is not 16kHz / 16-bit / mono.
+    """
+    with wave.open(str(path), "rb") as w:
+        rate = w.getframerate()
+        channels = w.getnchannels()
+        sampwidth = w.getsampwidth()
+        if rate != SAMPLE_RATE or channels != CHANNELS or sampwidth != SAMPLE_WIDTH:
+            raise WavFormatError(
+                f"need {SAMPLE_RATE}Hz / {SAMPLE_WIDTH * 8}-bit / "
+                f"{CHANNELS}ch, got {rate}Hz / {sampwidth * 8}-bit / "
+                f"{channels}ch ({path})"
+            )
+        return w.readframes(w.getnframes())
