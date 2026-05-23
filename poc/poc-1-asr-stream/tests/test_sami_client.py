@@ -187,3 +187,113 @@ def test_parse_server_error_frame():
 def test_parse_server_truncated_raises_protocol_error():
     with pytest.raises(SAMIProtocolError):
         parse_server_frame(b"\x11\x91")  # too short for header
+
+
+import asyncio
+import websockets
+from websockets.asyncio.server import serve as ws_serve
+from sami_client import SAMIStreamingClient
+
+
+class FakeSAMIServer:
+    """Minimal fake server: accepts headers, replies with a partial then a final."""
+
+    def __init__(self):
+        self.received_frames: list[bytes] = []
+        self.received_headers: dict[str, str] = {}
+        self.port: int | None = None
+        self._server = None
+        self._stop = asyncio.Event()
+
+    async def _handler(self, ws):
+        # websockets v12+ puts request headers on ws.request.headers
+        try:
+            self.received_headers = dict(ws.request.headers)
+        except AttributeError:
+            self.received_headers = dict(ws.request_headers)
+
+        # Read full_client_request
+        first = await ws.recv()
+        self.received_frames.append(first)
+
+        # Receive audio frames until we see one with LAST_POS_SEQ flag
+        while True:
+            frame = await ws.recv()
+            self.received_frames.append(frame)
+            flags = frame[1] & 0x0F
+            if flags == 0x3:  # LAST_POS_SEQ
+                break
+
+        # Send a partial then a final
+        partial = _make_server_frame(
+            msg_type=0x9, flags=0x1, ser=0x1, comp=0x0,
+            sequence=1,
+            payload=json.dumps({"result": {"text": "你好"}}).encode("utf-8"),
+        )
+        await ws.send(partial)
+
+        final = _make_server_frame(
+            msg_type=0x9, flags=0x3, ser=0x1, comp=0x0,
+            sequence=2,
+            payload=json.dumps({"result": {"text": "你好世界"}}).encode("utf-8"),
+        )
+        await ws.send(final)
+
+        # Wait for client to close after consuming final, so we don't race the close frame
+        # against the still-buffered final message.
+        try:
+            async for _ in ws:
+                pass
+        except websockets.exceptions.ConnectionClosed:
+            pass
+
+    async def __aenter__(self):
+        self._server = await ws_serve(self._handler, "127.0.0.1", 0)
+        # websockets v13 asyncio.server socket discovery
+        sock = next(iter(self._server.sockets))
+        self.port = sock.getsockname()[1]
+        return self
+
+    async def __aexit__(self, *exc):
+        self._server.close()
+        await self._server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_stream_round_trip():
+    async with FakeSAMIServer() as srv:
+        client = SAMIStreamingClient(
+            app_key="fake-app",
+            access_key="fake-token",
+            endpoint=f"ws://127.0.0.1:{srv.port}",
+            resource_id="volc.bigasr.sauc.duration",
+        )
+
+        async def chunks():
+            yield b"\x00\x01" * 100
+            yield b"\x02\x03" * 100
+            yield b"\x04\x05" * 100
+
+        events = []
+        async for evt in client.stream(chunks()):
+            events.append(evt)
+
+        # 1 partial + 1 final
+        assert len(events) == 2
+        assert events[0]["type"] == "partial"
+        assert events[0]["text"] == "你好"
+        assert events[1]["type"] == "final"
+        assert events[1]["text"] == "你好世界"
+
+    # Verify auth headers landed
+    assert srv.received_headers.get("x-api-app-key") == "fake-app"
+    assert srv.received_headers.get("x-api-access-key") == "fake-token"
+    assert srv.received_headers.get("x-api-resource-id") == "volc.bigasr.sauc.duration"
+    assert "x-api-request-id" in srv.received_headers
+
+    # Verify framing: 1 full_client_request + 3 audio frames (last is "is_last")
+    assert len(srv.received_frames) == 4
+    assert srv.received_frames[0][1] >> 4 == 0x1  # FULL_CLIENT_REQUEST
+    for f in srv.received_frames[1:]:
+        assert f[1] >> 4 == 0x2  # AUDIO_ONLY_REQUEST
+    assert srv.received_frames[-1][1] & 0x0F == 0x3  # LAST_POS_SEQ on final audio

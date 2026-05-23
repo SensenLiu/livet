@@ -207,3 +207,162 @@ def parse_server_frame(raw: bytes) -> dict:
         "sequence": sequence,
         "payload": payload,
     }
+
+
+import asyncio
+import uuid
+from collections.abc import AsyncIterator
+from typing import TypedDict
+
+import websockets
+from websockets.asyncio.client import connect as ws_connect
+
+
+class StreamEvent(TypedDict):
+    type: str         # "partial" | "final" | "error"
+    text: str
+    raw: dict
+    ts_ms: int        # monotonic ms when received (caller uses for latency math)
+
+
+class SAMIStreamingClient:
+    """Volcengine SAUC bigmodel v3 streaming ASR client.
+
+    Usage:
+        client = SAMIStreamingClient(app_key=..., access_key=...)
+        async for event in client.stream(pcm_chunks):
+            ...
+    """
+
+    DEFAULT_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+    DEFAULT_RESOURCE = "volc.bigasr.sauc.duration"
+
+    def __init__(
+        self,
+        app_key: str,
+        access_key: str,
+        endpoint: str = DEFAULT_ENDPOINT,
+        resource_id: str = DEFAULT_RESOURCE,
+        idle_timeout_s: float = 30.0,
+    ):
+        if not app_key:
+            raise ValueError("app_key required")
+        if not access_key:
+            raise ValueError("access_key required")
+        self.app_key = app_key
+        self.access_key = access_key
+        self.endpoint = endpoint
+        self.resource_id = resource_id
+        self.idle_timeout_s = idle_timeout_s
+
+    def _config_payload(self) -> dict:
+        """Initial JSON config sent in FULL_CLIENT_REQUEST."""
+        return {
+            "user": {"uid": "poc-1"},
+            "audio": {
+                "format": "pcm",
+                "codec": "raw",
+                "rate": 16000,
+                "bits": 16,
+                "channel": 1,
+            },
+            "request": {
+                "model_name": "bigmodel",
+                "enable_punc": True,
+                "result_type": "single",
+            },
+        }
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "X-Api-App-Key": self.app_key,
+            "X-Api-Access-Key": self.access_key,
+            "X-Api-Resource-Id": self.resource_id,
+            "X-Api-Request-Id": str(uuid.uuid4()),
+        }
+
+    async def stream(
+        self,
+        pcm_chunks: AsyncIterator[bytes],
+    ) -> AsyncIterator[StreamEvent]:
+        """Open WS, send config + PCM, yield partial/final events."""
+        try:
+            ws = await ws_connect(
+                self.endpoint,
+                additional_headers=self._headers(),
+                max_size=2 ** 24,
+            )
+        except websockets.exceptions.InvalidStatus as e:
+            status = e.response.status_code
+            if status in (401, 403):
+                raise SAMIAuthError(f"upstream rejected auth ({status})") from e
+            raise SAMIConnectError(f"upstream returned {status}") from e
+        except OSError as e:
+            raise SAMIConnectError(f"cannot reach {self.endpoint}: {e}") from e
+
+        async with ws:
+            # 1. send config
+            await ws.send(build_full_client_request(self._config_payload(), sequence=1))
+
+            # 2. spawn audio sender + receiver concurrently
+            seq = 2
+
+            async def send_audio():
+                nonlocal seq
+                last: bytes | None = None
+                async for chunk in pcm_chunks:
+                    if last is not None:
+                        await ws.send(build_audio_frame(last, seq, is_last=False))
+                        seq += 1
+                    last = chunk
+                # send the final chunk (or empty if no chunks at all) with is_last=True
+                await ws.send(build_audio_frame(last or b"", seq, is_last=True))
+
+            send_task = asyncio.create_task(send_audio())
+
+            try:
+                while True:
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=self.idle_timeout_s)
+                    except websockets.exceptions.ConnectionClosed as e:
+                        raise SAMIConnectError(
+                            f"connection closed mid-stream: {e}"
+                        ) from e
+                    evt = parse_server_frame(raw)
+                    ts_ms = int(asyncio.get_event_loop().time() * 1000)
+
+                    if evt["msg_type"] == MessageType.SERVER_ERROR:
+                        yield StreamEvent(
+                            type="error",
+                            text="",
+                            raw=evt["payload"] if isinstance(evt["payload"], dict) else {},
+                            ts_ms=ts_ms,
+                        )
+                        raise SAMIProtocolError(f"upstream error: {evt['payload']}")
+
+                    if evt["msg_type"] == MessageType.FULL_SERVER_RESPONSE:
+                        text = ""
+                        if isinstance(evt["payload"], dict):
+                            text = (
+                                evt["payload"]
+                                .get("result", {})
+                                .get("text", "")
+                            )
+                        yield StreamEvent(
+                            type="final" if evt["is_last"] else "partial",
+                            text=text,
+                            raw=evt["payload"] if isinstance(evt["payload"], dict) else {},
+                            ts_ms=ts_ms,
+                        )
+                        if evt["is_last"]:
+                            break
+                    # SERVER_ACK: ignore
+            except asyncio.TimeoutError as e:
+                raise SAMITimeoutError(f"no final within {self.idle_timeout_s}s") from e
+            finally:
+                if not send_task.done():
+                    send_task.cancel()
+                try:
+                    await send_task
+                except (asyncio.CancelledError, Exception):
+                    pass
