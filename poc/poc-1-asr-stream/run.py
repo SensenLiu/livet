@@ -125,3 +125,124 @@ def read_wav_pcm(path: Path) -> bytes:
                 f"{channels}ch ({path})"
             )
         return w.readframes(w.getnframes())
+
+
+def _print_safe(label: str, msg: str) -> None:
+    """Print to stderr to keep stdout clean for --report consumers."""
+    print(f"[{label}] {msg}", file=sys.stderr)
+
+
+async def _run_async(args: argparse.Namespace) -> int:
+    env_path = Path(args.env) if args.env else DEFAULT_ENV_PATH
+    try:
+        env = load_env(env_path)
+    except EnvMissing as e:
+        _print_safe("ENV", str(e))
+        return 2
+
+    audio_path = Path(args.audio)
+    transcript_path = Path(args.transcript)
+    try:
+        pcm = read_wav_pcm(audio_path)
+    except WavFormatError as e:
+        _print_safe("WAV", str(e))
+        return 2
+
+    ground_truth = transcript_path.read_text(encoding="utf-8")
+
+    client = SAMIStreamingClient(
+        app_key=env["VOLC_ASR_APP_ID"],
+        access_key=env["VOLC_ASR_ACCESS_TOKEN"],
+    )
+
+    _print_safe("INFO", f"audio={audio_path} ({len(pcm)} bytes PCM)")
+    _print_safe("INFO", f"endpoint={client.endpoint}")
+    _print_safe("INFO", f"resource={client.resource_id}")
+
+    final_text: str | None = None
+    t_send_end: float | None = None
+    t_recv_final: float | None = None
+    t_start = time.monotonic()
+
+    async def chunks_with_send_end_capture():
+        nonlocal t_send_end
+        async for chunk in chunks_at_realtime_pace(pcm):
+            yield chunk
+        t_send_end = time.monotonic()
+
+    try:
+        async for evt in client.stream(chunks_with_send_end_capture()):
+            elapsed = int((time.monotonic() - t_start) * 1000)
+            if evt["type"] == "partial":
+                _print_safe("PARTIAL", f"+{elapsed}ms  {evt['text']}")
+            elif evt["type"] == "final":
+                t_recv_final = time.monotonic()
+                final_text = evt["text"]
+                _print_safe("FINAL", f"+{elapsed}ms  {evt['text']}")
+            elif evt["type"] == "error":
+                _print_safe("UPSTREAM-ERROR", json.dumps(evt["raw"], ensure_ascii=False))
+    except SAMIAuthError as e:
+        _print_safe("AUTH-FAIL", str(e))
+        _print_safe("HINT", "Check (1) Volcengine speech console: AppID has "
+                           "'volc.bigasr.sauc.duration' enabled. (2) "
+                           "VOLC_ASR_ACCESS_TOKEN is the speech-console access "
+                           "token (NOT the IAM AK_ID).")
+        return 3
+    except SAMIConnectError as e:
+        _print_safe("CONNECT-FAIL", str(e))
+        return 4
+    except SAMITimeoutError as e:
+        _print_safe("TIMEOUT", str(e))
+        return 5
+    except SAMIProtocolError as e:
+        _print_safe("PROTOCOL-FAIL", str(e))
+        return 6
+
+    if final_text is None or t_send_end is None or t_recv_final is None:
+        _print_safe("ERROR", "stream ended without a final")
+        return 7
+
+    latency_ms = final_latency_ms(t_send_end, t_recv_final)
+    char_err_rate = cer(final_text, ground_truth)
+
+    lat_ok = latency_ms < LATENCY_THRESHOLD_MS
+    cer_ok = char_err_rate < CER_THRESHOLD
+
+    report = {
+        "transcript": final_text,
+        "ground_truth": ground_truth,
+        "final_latency_ms": latency_ms,
+        "latency_threshold_ms": LATENCY_THRESHOLD_MS,
+        "latency_pass": lat_ok,
+        "cer": round(char_err_rate, 4),
+        "cer_threshold": CER_THRESHOLD,
+        "cer_pass": cer_ok,
+    }
+
+    _print_safe("RESULT", f"transcript: {final_text}")
+    _print_safe("RESULT", f"final_latency: {latency_ms} ms  "
+                          f"[{'PASS' if lat_ok else 'FAIL'} vs <{LATENCY_THRESHOLD_MS}ms]")
+    _print_safe("RESULT", f"CER: {char_err_rate * 100:.2f}%  "
+                          f"[{'PASS' if cer_ok else 'FAIL'} vs <{CER_THRESHOLD * 100:.0f}%]")
+
+    if args.report:
+        Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        _print_safe("RESULT", f"report written to {args.report}")
+
+    return 0 if (lat_ok and cer_ok) else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description="PoC-1 SAMI streaming ASR runner.")
+    p.add_argument("--audio", required=True, help="path to 16k/16bit/mono WAV")
+    p.add_argument("--transcript", required=True, help="path to UTF-8 ground truth")
+    p.add_argument("--env", default=None,
+                   help="path to .env (default: ../../gateway/.env)")
+    p.add_argument("--report", default=None,
+                   help="optional: write JSON report to this path")
+    args = p.parse_args(argv)
+    return asyncio.run(_run_async(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
