@@ -71,3 +71,35 @@ def load_env(env_path: Path) -> dict[str, str]:
     if missing:
         raise EnvMissing(f"missing required env vars: {', '.join(missing)}")
     return cfg
+
+
+async def chunks_at_realtime_pace(
+    pcm: bytes,
+    chunk_ms: int = CHUNK_MS,
+    sleep: bool = True,
+) -> AsyncIterator[bytes]:
+    """Yield PCM chunks of `chunk_ms` duration at wall-clock pace.
+
+    Real-time pacing simulates a microphone, which is what SAMI streaming
+    expects (otherwise it may return early "final" prematurely).
+
+    sleep=False is for tests: emit all chunks immediately.
+    """
+    bytes_per_chunk = int(SAMPLE_RATE * SAMPLE_WIDTH * CHANNELS * chunk_ms / 1000)
+    target_interval_s = chunk_ms / 1000.0
+
+    next_send_t = time.monotonic()
+    first = True
+    for offset in range(0, len(pcm), bytes_per_chunk):
+        chunk = pcm[offset:offset + bytes_per_chunk]
+        if not chunk:
+            break
+
+        if sleep and not first:
+            now = time.monotonic()
+            wait = next_send_t - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+        first = False
+        next_send_t += target_interval_s
+        yield chunk
