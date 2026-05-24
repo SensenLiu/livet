@@ -1,0 +1,25 @@
+# 屏蔽 Kotlin/Android 编译产物
+build/
+.gradle/
+*.jar
+*.apk
+
+# 屏蔽数据库文件
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# 屏蔽音频/视频等媒体文件
+*.wav
+*.pcm
+*.mp3
+*.mp4
+
+# 屏蔽其他常见的庞大目录 (如果有)
+node_modules/
+venv/
+.env/
+.venv/
+env/
