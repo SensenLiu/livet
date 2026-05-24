@@ -263,10 +263,9 @@ class FakeSAMIServer:
 async def test_stream_round_trip():
     async with FakeSAMIServer() as srv:
         client = SAMIStreamingClient(
-            app_key="fake-app",
-            access_key="fake-token",
+            api_key="fake-api-key",
             endpoint=f"ws://127.0.0.1:{srv.port}",
-            resource_id="volc.bigasr.sauc.duration",
+            resource_id="volc.seedasr.sauc.duration",
         )
 
         async def chunks():
@@ -286,10 +285,9 @@ async def test_stream_round_trip():
         assert events[1]["text"] == "你好世界"
 
     # Verify auth headers landed
-    assert srv.received_headers.get("x-api-app-key") == "fake-app"
-    assert srv.received_headers.get("x-api-access-key") == "fake-token"
-    assert srv.received_headers.get("x-api-resource-id") == "volc.bigasr.sauc.duration"
-    assert "x-api-request-id" in srv.received_headers
+    assert srv.received_headers.get("x-api-key") == "fake-api-key"
+    assert srv.received_headers.get("x-api-resource-id") == "volc.seedasr.sauc.duration"
+    assert "x-api-connect-id" in srv.received_headers
 
     # Verify framing: 1 full_client_request + 3 audio frames (last is "is_last")
     assert len(srv.received_frames) == 4

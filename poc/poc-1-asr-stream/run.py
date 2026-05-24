@@ -27,7 +27,7 @@ from sami_client import (
 )
 
 
-REQUIRED_ENV = ("VOLC_ASR_APP_ID", "VOLC_ASR_ACCESS_TOKEN")
+REQUIRED_ENV = ("VOLC_API_KEY",)
 DEFAULT_ENV_PATH = Path(__file__).resolve().parents[2] / "gateway" / ".env"
 
 LATENCY_THRESHOLD_MS = 1500
@@ -151,8 +151,7 @@ async def _run_async(args: argparse.Namespace) -> int:
     ground_truth = transcript_path.read_text(encoding="utf-8")
 
     client = SAMIStreamingClient(
-        app_key=env["VOLC_ASR_APP_ID"],
-        access_key=env["VOLC_ASR_ACCESS_TOKEN"],
+        api_key=env["VOLC_API_KEY"],
     )
 
     _print_safe("INFO", f"audio={audio_path} ({len(pcm)} bytes PCM)")
@@ -183,10 +182,10 @@ async def _run_async(args: argparse.Namespace) -> int:
                 _print_safe("UPSTREAM-ERROR", json.dumps(evt["raw"], ensure_ascii=False))
     except SAMIAuthError as e:
         _print_safe("AUTH-FAIL", str(e))
-        _print_safe("HINT", "Check (1) Volcengine speech console: AppID has "
-                           "'volc.bigasr.sauc.duration' enabled. (2) "
-                           "VOLC_ASR_ACCESS_TOKEN is the speech-console access "
-                           "token (NOT the IAM AK_ID).")
+        _print_safe("HINT", "Check (1) Volcengine speech console: API Key has "
+                           "'volc.seedasr.sauc.duration' (Doubao streaming ASR "
+                           "2.0) bound. (2) VOLC_API_KEY in .env matches the "
+                           "new-console API Key (NOT the old AppID/AccessToken).")
         return 3
     except SAMIConnectError as e:
         _print_safe("CONNECT-FAIL", str(e))

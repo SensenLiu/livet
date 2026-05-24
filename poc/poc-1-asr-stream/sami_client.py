@@ -235,22 +235,19 @@ class SAMIStreamingClient:
     """
 
     DEFAULT_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
-    DEFAULT_RESOURCE = "volc.bigasr.sauc.duration"
+    # Doubao streaming ASR 2.0, hourly tier. (1.0 used volc.bigasr.sauc.duration.)
+    DEFAULT_RESOURCE = "volc.seedasr.sauc.duration"
 
     def __init__(
         self,
-        app_key: str,
-        access_key: str,
+        api_key: str,
         endpoint: str = DEFAULT_ENDPOINT,
         resource_id: str = DEFAULT_RESOURCE,
         idle_timeout_s: float = 30.0,
     ):
-        if not app_key:
-            raise ValueError("app_key required")
-        if not access_key:
-            raise ValueError("access_key required")
-        self.app_key = app_key
-        self.access_key = access_key
+        if not api_key:
+            raise ValueError("api_key required")
+        self.api_key = api_key
         self.endpoint = endpoint
         self.resource_id = resource_id
         self.idle_timeout_s = idle_timeout_s
@@ -275,10 +272,9 @@ class SAMIStreamingClient:
 
     def _headers(self) -> dict[str, str]:
         return {
-            "X-Api-App-Key": self.app_key,
-            "X-Api-Access-Key": self.access_key,
+            "X-Api-Key": self.api_key,
             "X-Api-Resource-Id": self.resource_id,
-            "X-Api-Request-Id": str(uuid.uuid4()),
+            "X-Api-Connect-Id": str(uuid.uuid4()),
         }
 
     async def stream(
@@ -294,9 +290,16 @@ class SAMIStreamingClient:
             )
         except websockets.exceptions.InvalidStatus as e:
             status = e.response.status_code
+            # Pull whatever diagnostic info upstream gave us.
+            logid = e.response.headers.get("X-Tt-Logid", "<no-logid>")
+            try:
+                body = e.response.body.decode("utf-8", errors="replace") if e.response.body else ""
+            except AttributeError:
+                body = ""
+            detail = f"status={status} logid={logid} body={body!r}"
             if status in (401, 403):
-                raise SAMIAuthError(f"upstream rejected auth ({status})") from e
-            raise SAMIConnectError(f"upstream returned {status}") from e
+                raise SAMIAuthError(f"upstream rejected auth ({detail})") from e
+            raise SAMIConnectError(f"upstream returned {detail}") from e
         except OSError as e:
             raise SAMIConnectError(f"cannot reach {self.endpoint}: {e}") from e
 
